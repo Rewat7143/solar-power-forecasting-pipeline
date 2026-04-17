@@ -1,0 +1,81 @@
+{
+  "saved_models": {
+    "Random Forest": {
+      "name": "Random Forest",
+      "family": "tree",
+      "model_type": "RandomForestRegressor",
+      "has_calibrator": false,
+      "saved_path": "models/Random_Forest"
+    },
+    "CNN + LSTM": {
+      "name": "CNN + LSTM",
+      "family": "sequence",
+      "model_type": "CNNLSTMRegressor",
+      "has_calibrator": false,
+      "saved_path": "models/CNN_plus_LSTM"
+    },
+    "PatchTST": {
+      "name": "PatchTST",
+      "family": "sequence",
+      "model_type": "PatchTSTRegressor",
+      "has_calibrator": false,
+      "saved_path": "models/PatchTST"
+    },
+    "Temporal Fusion Transformer": {
+      "name": "Temporal Fusion Transformer",
+      "family": "sequence",
+      "model_type": "TemporalFusionTransformerRegressor",
+      "has_calibrator": false,
+      "saved_path": "models/Temporal_Fusion_Transformer"
+    },
+    "CNN + Transformer": {
+      "name": "CNN + Transformer",
+      "family": "sequence",
+      "model_type": "CNNTransformerRegressor",
+      "has_calibrator": false,
+      "saved_path": "models/CNN_plus_Transformer"
+    }
+  },
+  "ensemble_definition": {
+    "name": "Ensemble (Random Forest + PatchTST)",
+    "members": [
+      "Random Forest",
+      "PatchTST"
+    ],
+    "weights": {
+      "Random Forest": 0.6077501564794269,
+      "PatchTST": 0.3922498435205731
+    }
+  },
+  "config": {
+    "sequence_length": 48,
+    "feature_columns": [
+      "ALLSKY_SFC_SW_DWN",
+      "T2M",
+      "CLOUD_AMT",
+      "hour",
+      "day",
+      "month",
+      "day_of_week",
+      "day_of_year",
+      "minute_of_day",
+      "clock_hour",
+      "hour_sin",
+      "hour_cos",
+      "month_sin",
+      "month_cos",
+      "dow_sin",
+      "dow_cos",
+      "doy_sin",
+      "doy_cos",
+      "lag_1",
+      "lag_24",
+      "lag_288",
+      "rolling_mean_3",
+      "rolling_mean_12",
+      "rolling_mean_24",
+      "rolling_std_12",
+      "irradiance_rolling_mean_12"
+    ]
+  }
+}
