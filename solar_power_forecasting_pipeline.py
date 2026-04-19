@@ -6,6 +6,7 @@
 import math
 import random
 import sys
+import json
 import warnings
 from dataclasses import dataclass
 from io import StringIO
@@ -20,7 +21,9 @@ import requests
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import joblib
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
@@ -91,6 +94,8 @@ CONFIG = {
     "transformer_heads": 4,
     "transformer_layers": 2,
     "transformer_d_model": 64,
+    "stacking_top_k": 4,
+    "stacking_meta_train_fraction": 0.70,
     "train_fraction": 0.70,
     "val_fraction": 0.15,
 }
@@ -603,6 +608,151 @@ def apply_affine_calibrator(preds: np.ndarray, calibrator: Optional[Dict[str, fl
     slope = float(calibrator.get("slope", 1.0))
     intercept = float(calibrator.get("intercept", 0.0))
     return np.clip(slope * arr + intercept, 0.0, None)
+
+
+def sanitize_model_dir_name(model_name: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in model_name).strip("_")
+    while "__" in safe:
+        safe = safe.replace("__", "_")
+    return safe or "model"
+
+
+def export_models_and_metrics(
+    model_entries: Dict[str, Dict[str, object]],
+    ensemble_definition: Dict[str, object],
+    config: Dict[str, object],
+    one_step_metrics_df: pd.DataFrame,
+    recursive_metrics_df: pd.DataFrame,
+    latest_metrics_path: Path,
+    models_dir: Path,
+) -> None:
+    models_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_models = {}
+    for model_name, entry in model_entries.items():
+        folder_name = sanitize_model_dir_name(model_name)
+        model_folder = models_dir / folder_name
+        model_folder.mkdir(parents=True, exist_ok=True)
+        model_obj = entry.get("model")
+        if model_obj is not None:
+            joblib.dump(model_obj, model_folder / "model.pkl")
+
+        saved_models[model_name] = {
+            "name": model_name,
+            "family": str(entry.get("family", "unknown")),
+            "model_type": type(model_obj).__name__ if model_obj is not None else "unknown",
+            "has_calibrator": bool(entry.get("calibrator")),
+            "saved_path": f"models/{folder_name}",
+        }
+
+    manifest = {
+        "saved_models": saved_models,
+        "ensemble_definition": ensemble_definition or {},
+        "config": {
+            "sequence_length": int(config["sequence_length"]),
+            "feature_columns": list(config.get("feature_columns", [])),
+        },
+    }
+    (models_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    one_step_records = one_step_metrics_df.sort_values("RMSE").to_dict(orient="records")
+    daylight_records = (
+        recursive_metrics_df.loc[recursive_metrics_df["Scope"] == "Daylight only"]
+        .sort_values("RMSE")
+        .drop(columns=["Scope"])
+        .to_dict(orient="records")
+    )
+
+    latest_payload = {
+        "run_date": pd.Timestamp.now().date().isoformat(),
+        "source": "solar_power_forecasting_pipeline.py",
+        "one_step": one_step_records,
+        "recursive_daylight": daylight_records,
+    }
+    if ensemble_definition:
+        holdout = ensemble_definition.get("holdout_daylight_metrics")
+        weights = ensemble_definition.get("weights")
+        if isinstance(holdout, dict):
+            latest_payload["stacked_holdout_daylight"] = holdout
+        if isinstance(weights, dict):
+            latest_payload["stacked_weights"] = weights
+
+    latest_metrics_path.write_text(json.dumps(latest_payload, indent=2), encoding="utf-8")
+
+
+def build_stacked_ensemble_backtest(
+    recursive_backtests: Dict[str, pd.DataFrame],
+    candidate_models: Sequence[str],
+    meta_train_fraction: float = 0.70,
+) -> Tuple[pd.DataFrame, Dict[str, float], Dict[str, float], Dict[str, object]]:
+    if len(candidate_models) < 2:
+        raise ValueError("Need at least two candidate models for stacked ensemble.")
+
+    merged = None
+    feature_columns = []
+    for idx, model_name in enumerate(candidate_models):
+        pred_col = f"pred_{idx+1}"
+        feature_columns.append(pred_col)
+        frame = recursive_backtests[model_name].loc[
+            :, ["timestamp", "forecast_origin", "actual_power_kw", "is_daylight", "forecast_power_kw"]
+        ].copy()
+        frame = frame.rename(columns={"forecast_power_kw": pred_col})
+        keep_cols = ["timestamp", "forecast_origin", pred_col]
+        if merged is None:
+            keep_cols = ["timestamp", "forecast_origin", "actual_power_kw", "is_daylight", pred_col]
+        frame = frame.loc[:, keep_cols]
+        merged = frame if merged is None else merged.merge(frame, on=["timestamp", "forecast_origin"], how="inner")
+
+    if merged is None or merged.empty:
+        raise ValueError("Stacked ensemble merge failed due to empty backtest frames.")
+
+    merged = merged.sort_values(["forecast_origin", "timestamp"]).reset_index(drop=True)
+    daylight = merged.loc[merged["is_daylight"] == 1].copy()
+    if daylight.empty:
+        raise ValueError("No daylight rows available for stacked ensemble fitting.")
+
+    unique_origins = np.sort(daylight["forecast_origin"].unique())
+    split_idx = max(1, min(len(unique_origins) - 1, int(len(unique_origins) * meta_train_fraction)))
+    train_origins = set(unique_origins[:split_idx])
+    holdout_mask = daylight["forecast_origin"].isin(unique_origins[split_idx:])
+    if holdout_mask.sum() == 0:
+        holdout_mask = np.ones(len(daylight), dtype=bool)
+
+    X_train = daylight.loc[daylight["forecast_origin"].isin(train_origins), feature_columns].to_numpy(dtype=float)
+    y_train = daylight.loc[daylight["forecast_origin"].isin(train_origins), "actual_power_kw"].to_numpy(dtype=float)
+    if len(y_train) < 32:
+        raise ValueError("Not enough daylight samples to fit stacked ensemble meta-learner.")
+
+    meta_model = LinearRegression(fit_intercept=False, positive=True)
+    meta_model.fit(X_train, y_train)
+
+    all_pred = np.clip(meta_model.predict(merged[feature_columns].to_numpy(dtype=float)), 0.0, None)
+    stacked = merged.loc[:, ["timestamp", "forecast_origin", "actual_power_kw", "is_daylight"]].copy()
+    stacked["forecast_power_kw"] = all_pred
+
+    all_metrics = regression_metrics(
+        stacked["actual_power_kw"].to_numpy(),
+        stacked["forecast_power_kw"].to_numpy(),
+    )
+    daylight_stacked = stacked.loc[stacked["is_daylight"] == 1].copy()
+    daylight_metrics = regression_metrics(
+        daylight_stacked["actual_power_kw"].to_numpy(),
+        daylight_stacked["forecast_power_kw"].to_numpy(),
+    )
+
+    holdout_df = daylight.loc[holdout_mask].copy()
+    holdout_pred = np.clip(meta_model.predict(holdout_df[feature_columns].to_numpy(dtype=float)), 0.0, None)
+    holdout_metrics = regression_metrics(holdout_df["actual_power_kw"].to_numpy(), holdout_pred)
+
+    raw_weights = np.asarray(meta_model.coef_, dtype=float)
+    weights = {name: float(weight) for name, weight in zip(candidate_models, raw_weights)}
+    stack_info = {
+        "members": list(candidate_models),
+        "weights": weights,
+        "meta_train_fraction": float(meta_train_fraction),
+        "holdout_daylight_metrics": holdout_metrics,
+    }
+    return stacked, all_metrics, daylight_metrics, stack_info
 
 @dataclass
 class SequenceBundle:
@@ -1545,52 +1695,52 @@ for model_name in model_entries.keys():
 
 base_daylight = pd.DataFrame(recursive_rows)
 base_daylight = base_daylight.loc[base_daylight["Scope"] == "Daylight only"].sort_values("RMSE")
-top2_models = base_daylight["Model"].head(2).tolist()
+top_k_models = base_daylight["Model"].head(int(CONFIG.get("stacking_top_k", 4))).tolist()
 
-if len(top2_models) == 2:
-    m1, m2 = top2_models
-    rmse_values = base_daylight.set_index("Model").loc[[m1, m2], "RMSE"].to_numpy(dtype=float)
-    inv_rmse = 1.0 / np.clip(rmse_values, 1e-6, None)
-    weights = inv_rmse / inv_rmse.sum()
-    ensemble_name = f"Ensemble ({m1} + {m2})"
+if len(top_k_models) >= 2:
+    ensemble_name = f"Stacked Ensemble ({' + '.join(top_k_models)})"
+    try:
+        ensemble_backtest, ens_all_metrics, ens_daylight_metrics, stack_info = build_stacked_ensemble_backtest(
+            recursive_backtests=recursive_backtests,
+            candidate_models=top_k_models,
+            meta_train_fraction=float(CONFIG.get("stacking_meta_train_fraction", 0.70)),
+        )
 
-    b1 = recursive_backtests[m1].loc[:, ["timestamp", "forecast_origin", "actual_power_kw", "is_daylight", "forecast_power_kw"]].copy()
-    b2 = recursive_backtests[m2].loc[:, ["timestamp", "forecast_origin", "forecast_power_kw"]].copy()
-    b1 = b1.rename(columns={"forecast_power_kw": "pred_1"})
-    b2 = b2.rename(columns={"forecast_power_kw": "pred_2"})
-    ensemble_backtest = b1.merge(b2, on=["timestamp", "forecast_origin"], how="inner")
-    ensemble_backtest["forecast_power_kw"] = (
-        float(weights[0]) * ensemble_backtest["pred_1"]
-        + float(weights[1]) * ensemble_backtest["pred_2"]
-    )
-    ensemble_backtest = ensemble_backtest.loc[:, ["timestamp", "forecast_origin", "actual_power_kw", "is_daylight", "forecast_power_kw"]]
-
-    ens_all_metrics = regression_metrics(
-        ensemble_backtest["actual_power_kw"].to_numpy(),
-        ensemble_backtest["forecast_power_kw"].to_numpy(),
-    )
-    ens_daylight_df = ensemble_backtest.loc[ensemble_backtest["is_daylight"] == 1].copy()
-    ens_daylight_metrics = regression_metrics(
-        ens_daylight_df["actual_power_kw"].to_numpy(),
-        ens_daylight_df["forecast_power_kw"].to_numpy(),
-    )
-
-    recursive_backtests[ensemble_name] = ensemble_backtest
-    recursive_rows.extend(
-        [
-            {"Model": ensemble_name, "Scope": "All hours", **ens_all_metrics},
-            {"Model": ensemble_name, "Scope": "Daylight only", **ens_daylight_metrics},
-        ]
-    )
-    ensemble_definition = {
-        "name": ensemble_name,
-        "members": [m1, m2],
-        "weights": {m1: float(weights[0]), m2: float(weights[1])},
-    }
-    print(f"{ensemble_name} recursive daylight metrics:", ens_daylight_metrics)
-    print("Ensemble weights:", ensemble_definition["weights"])
+        recursive_backtests[ensemble_name] = ensemble_backtest
+        recursive_rows.extend(
+            [
+                {"Model": ensemble_name, "Scope": "All hours", **ens_all_metrics},
+                {"Model": ensemble_name, "Scope": "Daylight only", **ens_daylight_metrics},
+            ]
+        )
+        ensemble_definition = {
+            "name": ensemble_name,
+            "method": "non_negative_linear_stacking",
+            "members": stack_info["members"],
+            "weights": stack_info["weights"],
+            "meta_train_fraction": stack_info["meta_train_fraction"],
+            "holdout_daylight_metrics": stack_info["holdout_daylight_metrics"],
+        }
+        print(f"{ensemble_name} recursive daylight metrics:", ens_daylight_metrics)
+        print("Stacked holdout daylight metrics:", stack_info["holdout_daylight_metrics"])
+        print("Stacked weights:", ensemble_definition["weights"])
+    except Exception as exc:
+        print("Stacked ensemble skipped:", exc)
 
 recursive_metrics_df = pd.DataFrame(recursive_rows).sort_values(["Scope", "RMSE"]).reset_index(drop=True)
+
+CONFIG["feature_columns"] = list(feature_columns)
+export_models_and_metrics(
+    model_entries=model_entries,
+    ensemble_definition=ensemble_definition,
+    config=CONFIG,
+    one_step_metrics_df=one_step_metrics_df,
+    recursive_metrics_df=recursive_metrics_df,
+    latest_metrics_path=Path("latest_metrics.json"),
+    models_dir=Path("models"),
+)
+print("Model artifacts exported to:", Path("models").resolve())
+print("Metrics exported to:", Path("latest_metrics.json").resolve())
 
 recursive_metrics_df
 

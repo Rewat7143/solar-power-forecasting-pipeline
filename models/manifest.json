@@ -4,47 +4,58 @@
       "name": "Random Forest",
       "family": "tree",
       "model_type": "RandomForestRegressor",
-      "has_calibrator": false,
+      "has_calibrator": true,
       "saved_path": "models/Random_Forest"
     },
     "CNN + LSTM": {
       "name": "CNN + LSTM",
       "family": "sequence",
       "model_type": "CNNLSTMRegressor",
-      "has_calibrator": false,
-      "saved_path": "models/CNN_plus_LSTM"
+      "has_calibrator": true,
+      "saved_path": "models/CNN_LSTM"
     },
     "PatchTST": {
       "name": "PatchTST",
       "family": "sequence",
       "model_type": "PatchTSTRegressor",
-      "has_calibrator": false,
+      "has_calibrator": true,
       "saved_path": "models/PatchTST"
     },
     "Temporal Fusion Transformer": {
       "name": "Temporal Fusion Transformer",
       "family": "sequence",
       "model_type": "TemporalFusionTransformerRegressor",
-      "has_calibrator": false,
+      "has_calibrator": true,
       "saved_path": "models/Temporal_Fusion_Transformer"
     },
     "CNN + Transformer": {
       "name": "CNN + Transformer",
       "family": "sequence",
       "model_type": "CNNTransformerRegressor",
-      "has_calibrator": false,
-      "saved_path": "models/CNN_plus_Transformer"
+      "has_calibrator": true,
+      "saved_path": "models/CNN_Transformer"
     }
   },
   "ensemble_definition": {
-    "name": "Ensemble (Random Forest + PatchTST)",
+    "name": "Stacked Ensemble (Random Forest + PatchTST + Temporal Fusion Transformer + CNN + Transformer)",
+    "method": "non_negative_linear_stacking",
     "members": [
       "Random Forest",
-      "PatchTST"
+      "PatchTST",
+      "Temporal Fusion Transformer",
+      "CNN + Transformer"
     ],
     "weights": {
-      "Random Forest": 0.6077501564794269,
-      "PatchTST": 0.3922498435205731
+      "Random Forest": 0.9867222120127332,
+      "PatchTST": 0.05078677755176394,
+      "Temporal Fusion Transformer": 0.0,
+      "CNN + Transformer": 0.0
+    },
+    "meta_train_fraction": 0.7,
+    "holdout_daylight_metrics": {
+      "MAE": 11.250871745621245,
+      "RMSE": 21.134645082549305,
+      "R2": 0.7591069104718929
     }
   },
   "config": {

@@ -28,9 +28,9 @@ End-to-end solar generation forecasting project using historical solar meter rea
 - `solar_power_forecasting_pipeline.py` — script version of the pipeline
 - `models/` — exported trained models + `manifest.json`
 - `output_images_v3/` — generated analysis and report images
-- `MODEL_REPORT.md` — full report draft
-- `QUICK_REFERENCE.md` — short summary report
-- `report.html` — formatted project report
+- `scripts/` — report/image generation and notebook builder utilities
+- `final_outputs/reports/` — generated report files (PDF/HTML/MD)
+- `final_outputs/metrics/` — latest exported metrics JSON
 
 ## Generated Visual Artifacts
 
@@ -68,10 +68,10 @@ Run cells sequentially.
 ### Generate report visuals/scripts
 
 ```bash
-python3 generate_html_report.py
-python3 generate_model_comparison_image.py
-python3 generate_model_metrics_bar_chart.py
-python3 generate_system_architecture_diagram.py
+python3 scripts/generate_html_report.py
+python3 scripts/generate_model_comparison_image.py
+python3 scripts/generate_model_metrics_bar_chart.py
+python3 scripts/generate_system_architecture_diagram.py
 ```
 
 ## Forecast Output

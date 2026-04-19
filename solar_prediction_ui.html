@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Solar Prediction Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root {
+        --bg: #eff2f7;
+        --panel: #ffffff;
+        --ink: #17223b;
+        --muted: #6b778c;
+        --accent: #4f46e5;
+        --solar: #f59e0b;
+        --ok: #10b981;
+        --warn: #f59e0b;
+        --card-shadow: 0 10px 28px rgba(17, 24, 39, 0.08);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+      }
+      .topline {
+        text-align: center;
+        font-size: 11px;
+        letter-spacing: 1.2px;
+        font-weight: 700;
+        color: #64748b;
+        padding: 7px 8px;
+        text-transform: uppercase;
+        background: #e8ecf6;
+      }
+      .wrap { max-width: 1280px; margin: 18px auto; padding: 0 18px 30px; }
+      .head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .title h1 {
+        margin: 0;
+        color: #4f46e5;
+        font-size: 44px;
+        line-height: 1;
+      }
+      .title p { margin: 8px 0 0; color: var(--muted); font-weight: 600; }
+      .live-chip {
+        margin-top: 10px;
+        display: inline-block;
+        background: #d1fae5;
+        color: #047857;
+        border-radius: 10px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .actions {
+        background: var(--panel);
+        border-radius: 12px;
+        box-shadow: var(--card-shadow);
+        padding: 12px;
+        min-width: 210px;
+      }
+      .actions .meta { font-size: 11px; color: #9a3412; font-weight: 700; text-transform: uppercase; }
+      .actions .stamp { margin-top: 4px; font-size: 12px; color: #475569; }
+      .actions button {
+        margin-top: 10px;
+        width: 100%;
+        border: 0;
+        border-radius: 9px;
+        background: #eef2ff;
+        color: #4f46e5;
+        font-weight: 700;
+        padding: 10px;
+        cursor: pointer;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(180px, 1fr));
+        gap: 12px;
+      }
+      .card {
+        background: var(--panel);
+        border-radius: 16px;
+        box-shadow: var(--card-shadow);
+        padding: 16px;
+      }
+      .card .label { font-size: 11px; color: #64748b; letter-spacing: .8px; text-transform: uppercase; font-weight: 700; }
+      .card .value { margin-top: 8px; font-size: 46px; font-weight: 800; line-height: .95; }
+      .card .unit { font-size: 16px; color: #64748b; margin-left: 6px; }
+      .status {
+        margin-top: 10px;
+        display: inline-block;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 10px;
+      }
+      .active { background: #fef3c7; color: #b45309; }
+      .standby { background: #e2e8f0; color: #475569; }
+      .panel {
+        margin-top: 14px;
+        background: var(--panel);
+        border-radius: 16px;
+        box-shadow: var(--card-shadow);
+        padding: 16px;
+      }
+      .panel-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .panel-head h2 { margin: 0; font-size: 30px; }
+      .panel-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+      .tools { display: flex; gap: 8px; align-items: center; }
+      input[type="date"] {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 8px;
+        font-weight: 600;
+      }
+      input[type="time"] {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 8px;
+        font-weight: 600;
+      }
+      .btn {
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-primary { background: #4f46e5; color: #fff; }
+      .chart-wrap { margin-top: 10px; }
+      .legend {
+        display: flex;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+      .tag {
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .tag.solar { border-color: #f59e0b; color: #b45309; }
+      .tag.low { border-color: #94a3b8; color: #475569; }
+      .tag.high { border-color: #10b981; color: #047857; }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 12px;
+        font-size: 13px;
+      }
+      th, td { padding: 9px 10px; border-bottom: 1px solid #eef2f7; text-align: left; }
+      th { color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+      .mono { font-variant-numeric: tabular-nums; }
+      @media (max-width: 1024px) {
+        .cards { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+        .title h1 { font-size: 32px; }
+      }
+      @media (max-width: 700px) {
+        .head { flex-direction: column; }
+        .cards { grid-template-columns: 1fr; }
+        .panel-head { flex-direction: column; align-items: flex-start; }
+        .tools { width: 100%; }
+        input[type="date"], .btn { width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topline">Standalone Solar Prediction Monitor</div>
+    <div class="wrap">
+      <div class="head">
+        <div class="title">
+          <h1>Solar Forecast</h1>
+          <p>Independent prediction page (not linked with your main website)</p>
+          <div class="live-chip" id="liveChip">Loading...</div>
+        </div>
+        <div class="actions">
+          <div class="meta">Last Updated</div>
+          <div class="stamp" id="generatedAt">-</div>
+          <button onclick="refreshForecast()">Refresh Now</button>
+        </div>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <div class="label">Current Solar</div>
+          <div class="value mono" id="currentSolar">0<span class="unit">kW</span></div>
+          <span class="status active" id="statusChip">active</span>
+        </div>
+        <div class="card">
+          <div class="label">Peak (Recent)</div>
+          <div class="value mono" id="peakSolar">0<span class="unit">kW</span></div>
+          <span class="status standby">prediction</span>
+        </div>
+        <div class="card">
+          <div class="label">Average (Recent)</div>
+          <div class="value mono" id="avgSolar">0<span class="unit">kW</span></div>
+          <span class="status standby">trend</span>
+        </div>
+        <div class="card">
+          <div class="label">Confidence Band (Now)</div>
+          <div class="value mono" id="confBand">0-0<span class="unit">kW</span></div>
+          <span class="status standby">range</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Solar Prediction - Selected Timestamp</h2>
+            <p id="predictNote">Prediction is for a specific timestamp (not a 24-hour future run)</p>
+          </div>
+          <div class="tools">
+            <input id="dateInput" type="date" />
+            <input id="timeInput" type="time" step="300" />
+            <button class="btn btn-primary" onclick="refreshForecast()">Predict</button>
+          </div>
+        </div>
+
+        <div class="legend">
+          <span class="tag solar">Solar Power</span>
+          <span class="tag low">Confidence Low</span>
+          <span class="tag high">Confidence High</span>
+        </div>
+
+        <div class="chart-wrap">
+          <canvas id="solarChart" height="95"></canvas>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Time</th>
+              <th>Solar (kW)</th>
+              <th>Low (kW)</th>
+              <th>High (kW)</th>
+              <th>Irradiance</th>
+              <th>Cloud %</th>
+              <th>Temp C</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="forecastBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <script>
+      let chart;
+
+      function setTodayDateInput() {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const hh = String(now.getHours()).padStart(2, '0');
+        const mi = String(Math.floor(now.getMinutes() / 5) * 5).padStart(2, '0');
+        document.getElementById('dateInput').value = `${yyyy}-${mm}-${dd}`;
+        document.getElementById('timeInput').value = `${hh}:${mi}`;
+      }
+
+      function asNum(v, fallback = 0) {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : fallback;
+      }
+
+      function refreshForecast() {
+        const dateStr = document.getElementById('dateInput').value;
+        const timeStr = document.getElementById('timeInput').value;
+        document.getElementById('liveChip').textContent = 'Refreshing forecast...';
+
+        google.script.run
+          .withSuccessHandler(renderForecast)
+          .withFailureHandler(err => {
+            document.getElementById('liveChip').textContent = 'Failed to fetch forecast';
+            console.error(err);
+          })
+          .getSolarPrediction(dateStr, timeStr);
+      }
+
+      function renderForecast(res) {
+        if (!res || !res.ok) {
+          document.getElementById('liveChip').textContent = 'No forecast data';
+          return;
+        }
+
+        document.getElementById('generatedAt').textContent = res.generatedAt || '-';
+        document.getElementById('liveChip').textContent = `Prediction ready • ${res.requestDate || '-'} ${res.requestTime || ''}`;
+        document.getElementById('predictNote').textContent = res.note || 'Prediction is for a specific timestamp (not a 24-hour future run)';
+
+        const s = res.summary || {};
+        const low = asNum((s.confidenceBandKw || {}).low);
+        const high = asNum((s.confidenceBandKw || {}).high);
+        document.getElementById('currentSolar').innerHTML = `${asNum(s.currentSolarKw).toFixed(2)}<span class="unit">kW</span>`;
+        document.getElementById('peakSolar').innerHTML = `${asNum(s.peakSolarKw).toFixed(2)}<span class="unit">kW</span>`;
+        document.getElementById('avgSolar').innerHTML = `${asNum(s.avgSolarKw).toFixed(2)}<span class="unit">kW</span>`;
+        document.getElementById('confBand').innerHTML = `${low.toFixed(1)}-${high.toFixed(1)}<span class="unit">kW</span>`;
+
+        const chip = document.getElementById('statusChip');
+        chip.textContent = s.status || 'standby';
+        chip.className = `status ${s.status === 'active' ? 'active' : 'standby'}`;
+
+        renderChart(res.chartSeries);
+        renderTable(res.forecastColumns);
+      }
+
+      function renderChart(series) {
+        const ctx = document.getElementById('solarChart').getContext('2d');
+        const cfg = {
+          type: 'line',
+          data: {
+            labels: series.labels,
+            datasets: [
+              {
+                label: 'Confidence High',
+                data: series.highBandKw,
+                borderColor: 'rgba(16,185,129,0.35)',
+                backgroundColor: 'rgba(16,185,129,0.12)',
+                pointRadius: 0,
+                borderWidth: 1,
+                fill: false,
+                tension: 0.25,
+              },
+              {
+                label: 'Confidence Low',
+                data: series.lowBandKw,
+                borderColor: 'rgba(100,116,139,0.35)',
+                backgroundColor: 'rgba(100,116,139,0.12)',
+                pointRadius: 0,
+                borderWidth: 1,
+                fill: '-1',
+                tension: 0.25,
+              },
+              {
+                label: 'Solar Power',
+                data: series.solarPowerKw,
+                borderColor: '#f59e0b',
+                backgroundColor: 'rgba(245,158,11,0.18)',
+                pointRadius: (ctx) => (ctx.dataIndex === series.selectedIdx ? 4 : 0),
+                pointBackgroundColor: (ctx) => (ctx.dataIndex === series.selectedIdx ? '#ef4444' : '#f59e0b'),
+                borderWidth: 2,
+                fill: true,
+                tension: 0.28,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                mode: 'index',
+                intersect: false,
+                callbacks: {
+                  title(items) {
+                    return `Time: ${items[0].label}`;
+                  },
+                  afterBody(items) {
+                    const idx = items[0].dataIndex;
+                    const m = (series.meta || [])[idx] || {};
+                    return [
+                      `Irradiance: ${asNum(m.irradiance_wm2).toFixed(1)} W/m²`,
+                      `Cloud: ${asNum(m.cloud_pct).toFixed(1)} %`,
+                      `Temp: ${asNum(m.temp_c).toFixed(1)} °C`,
+                      `Slot Mean: ${asNum(m.slot_mean_kw).toFixed(2)} kW`,
+                      `Slot Std: ${asNum(m.slot_std_kw).toFixed(2)} kW`,
+                      `Status: ${m.status || 'standby'}`,
+                    ];
+                  },
+                },
+              },
+            },
+            scales: {
+              x: {
+                ticks: { maxTicksLimit: 14, color: '#64748b' },
+                grid: { color: 'rgba(148,163,184,0.15)' },
+              },
+              y: {
+                beginAtZero: true,
+                ticks: { color: '#64748b' },
+                title: { display: true, text: 'Power (kW)' },
+                grid: { color: 'rgba(148,163,184,0.15)' },
+              },
+            },
+          },
+        };
+
+        if (chart) chart.destroy();
+        chart = new Chart(ctx, cfg);
+      }
+
+      function renderTable(rows) {
+        const tbody = document.getElementById('forecastBody');
+        tbody.innerHTML = '';
+
+        if (!rows || !rows.length) {
+          return;
+        }
+
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i];
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="mono">${r.timestamp || ''}</td>
+            <td class="mono">${r.timeLabel}</td>
+            <td class="mono">${asNum(r.solar_power_kw).toFixed(2)}</td>
+            <td class="mono">${asNum(r.confidence_low_kw).toFixed(2)}</td>
+            <td class="mono">${asNum(r.confidence_high_kw).toFixed(2)}</td>
+            <td class="mono">${asNum(r.irradiance_proxy).toFixed(1)}</td>
+            <td class="mono">${asNum(r.cloud_pct).toFixed(1)}</td>
+            <td class="mono">${asNum(r.temp_c).toFixed(1)}</td>
+            <td>${r.status || 'standby'}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+      }
+
+      setTodayDateInput();
+      refreshForecast();
+    </script>
+  </body>
+</html>
