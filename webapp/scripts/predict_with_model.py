@@ -495,8 +495,7 @@ def build_feature_row(ts: datetime, weather, solar_index, slot_means, weather_in
     }
 
 
-def main():
-    payload = json.loads(sys.stdin.read())
+def generate_prediction(payload: dict) -> dict:
     date_str = payload["date"]
     time_str = payload["time"]
     manifest_path = Path(payload["manifestPath"])
