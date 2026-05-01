@@ -204,7 +204,12 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-md border border-slate-200 shadow-sm">
           <span className={`w-2.5 h-2.5 rounded-full ${loading ? "bg-[#D97706] animate-pulse" : "bg-green-600"}`}></span>
           <span className="text-sm text-slate-600 font-semibold tracking-wide uppercase">
-            {loading ? "Computing Inference..." : "System Active"}
+            {loading ? (
+              <span className="flex items-center gap-2">
+                Computing Inference... 
+                <span className="text-[10px] text-slate-400 normal-case font-normal">(Initial startup may take 50s on free tier)</span>
+              </span>
+            ) : "System Active"}
           </span>
         </div>
       </div>

@@ -27,3 +27,8 @@ gradio>=4.0.0
 
 # ── Optional (install separately if needed) ──────────────────────────
 # lightgbm>=4.0.0
+
+# ── API / Web Backend ────────────────────────────────────────────────
+fastapi>=0.100.0
+uvicorn>=0.23.0
+pydantic>=2.0.0

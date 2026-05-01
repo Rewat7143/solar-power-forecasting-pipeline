@@ -759,8 +759,8 @@ def main():
                 "cloud_pct": round2(weather["cloud_pct"]),
                 "temp_c": round2(weather["temp_c"]),
                 "status": "active" if y > 1 else "standby",
-                "slot_mean_kw": round2(slot_mean),
-                "slot_std_kw": round2(slot_std),
+                "slot_mean_kw": round2(slot_mean) if 'slot_mean' in locals() else 0.0,
+                "slot_std_kw": round2(slot_std) if 'slot_std' in locals() else 0.0,
             })
 
     current = solar_pred[selected_idx]
@@ -783,7 +783,7 @@ def main():
         "source": model_name,
     })
 
-    result = {
+    return {
         "ok": True,
         "generatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "requestDate": fmt_date(target_ts),
@@ -816,6 +816,10 @@ def main():
         "selectedMetrics": latest_metrics.get("one_step_metrics", []),
     }
 
+
+def main():
+    payload = json.loads(sys.stdin.read())
+    result = generate_prediction(payload)
     sys.stdout.write(json.dumps(result, allow_nan=False))
 
 
