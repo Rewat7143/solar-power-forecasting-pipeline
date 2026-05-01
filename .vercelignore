@@ -1,0 +1,15 @@
+# Ignore heavy Python files and dependencies during Vercel deployment
+requirements.txt
+src/
+models/
+data/
+api/
+scripts/
+.venv/
+notebooks/
+google-apps-scripts/
+*.xlsx
+*.joblib
+*.pth
+*.png
+*.pdf
