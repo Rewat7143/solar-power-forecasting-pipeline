@@ -34,7 +34,14 @@ def health_check():
 @app.post("/predict")
 def predict_endpoint(req: PredictRequest):
     try:
+        # Resolve paths relative to the API root on the server, 
+        # ignoring any absolute local paths sent from the frontend environment.
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         payload = req.model_dump()
+        payload["manifestPath"] = os.path.join(base_dir, "models", "manifest.json")
+        payload["dataRoot"] = base_dir # Use the root as data root
+        
         result = generate_prediction(payload)
         return result
     except Exception as e:
