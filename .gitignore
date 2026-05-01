@@ -1,17 +1,55 @@
-# Python
+# ── Python ───────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+dist/
+build/
 
-# Virtual env
+# ── Virtual environment ─────────────────────────────────────────────
 .venv/
+venv/
+env/
 
-# OS
+# ── OS artefacts ─────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
 
-# Jupyter
+# ── Jupyter ──────────────────────────────────────────────────────────
 .ipynb_checkpoints/
 
-# Logs
+# ── IDE ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Logs ─────────────────────────────────────────────────────────────
 *.log
+
+# ── Data (large files — see data/README.md for placement instructions)
+data/
+
+# ── Trained model binaries ───────────────────────────────────────────
+models/**/*.pkl
+models/solar_dataset_cache.pkl
+models/weather_hourly_cache.csv
+models/weather_hourly_cache_meta.json
+
+# ── Generated outputs ────────────────────────────────────────────────
+outputs/
+
+# ── Node.js (webapp) ─────────────────────────────────────────────────
+node_modules/
+.next/
+webapp/node_modules/
+webapp/.next/
+
+# ── Environment secrets ──────────────────────────────────────────────
+.env
+.env.local
+.env.production
+
+# ── Misc ─────────────────────────────────────────────────────────────
+*.pkl
