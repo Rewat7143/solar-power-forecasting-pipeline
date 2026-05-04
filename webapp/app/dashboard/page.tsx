@@ -12,6 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { toPng } from "html-to-image";
 
 type PredictResponse = {
   ok: boolean;
@@ -83,6 +84,50 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [data, setData] = useState<PredictResponse | null>(null);
   const didInitialPredict = useRef(false);
+  const chartRef = useRef<HTMLDivElement>(null);
+
+  const handleDownloadImage = async () => {
+    if (!chartRef.current) return;
+    try {
+      const dataUrl = await toPng(chartRef.current, { backgroundColor: '#ffffff', cacheBust: true });
+      const link = document.createElement('a');
+      link.download = `solar-forecast-chart-${data?.requestDate || 'export'}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Failed to export chart:', err);
+    }
+  };
+
+  const handleDownloadCSV = () => {
+    if (!data || !chartData.length) return;
+    
+    const rows = [
+      ["Time", "Predicted Solar (kW)", "Observed Solar (kW)", "Lower Confidence (kW)", "Upper Confidence (kW)", "Irradiance (W/m2)", "Cloud Coverage (%)", "Temperature (C)", "System Status"],
+      ...chartData.map(d => [
+        d.label,
+        d.solar.toFixed(3),
+        d.observed !== null ? d.observed.toFixed(3) : "N/A",
+        d.low.toFixed(3),
+        d.high.toFixed(3),
+        num(d.meta.irradiance_wm2).toFixed(1),
+        num(d.meta.cloud_pct).toFixed(1),
+        num(d.meta.temp_c).toFixed(1),
+        d.meta.status
+      ])
+    ];
+
+    const csvContent = rows.map(r => r.map(cell => `"${cell}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `solar_forecast_24h_${data.requestDate}_${data.requestTime.replace(':', '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const predict = useCallback(async (requestDate?: string, requestTime?: string, reqModel?: string) => {
     const effectiveDate = typeof requestDate === "string" ? requestDate : date;
@@ -284,24 +329,7 @@ export default function DashboardPage() {
             {data && (
               <button 
                 className="btn-secondary" 
-                onClick={() => {
-                  const rows = [
-                    ["Time", "Predicted (kW)", "Observed (kW)", "Low Bound (kW)", "High Bound (kW)", "Irradiance", "Cloud (%)", "Temp (C)"],
-                    ...(data.forecastColumns || []).map(r => [
-                      r.timeLabel, r.solar_power_kw, r.observed_power_kw || "", r.confidence_low_kw, r.confidence_high_kw, r.irradiance_proxy, r.cloud_pct, r.temp_c
-                    ])
-                  ];
-                  const csv = rows.map(r => r.join(",")).join("\n");
-                  const blob = new Blob([csv], { type: "text/csv" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `solar_forecast_${data.requestDate}.csv`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }}
+                onClick={handleDownloadCSV}
               >
                 Download CSV
               </button>
@@ -386,14 +414,36 @@ export default function DashboardPage() {
             <h2 className="text-xl font-bold text-[#1E293B]">Diurnal Forecast Curve (24h)</h2>
             <p className="text-slate-500 text-sm mt-1">Contextual generation profile for the evaluated day</p>
           </div>
-          <div className="flex flex-wrap gap-4 text-sm text-slate-600 font-medium">
-            <span className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#10B981]"></span> Observed Live</span>
-            <span className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#D97706]"></span> Predicted Power</span>
-            <span className="flex items-center gap-2"><span className="w-3 h-3 rounded bg-[#3B82F6]"></span> Confidence Band</span>
+          <div className="flex flex-wrap gap-3 items-center">
+            {data && (
+              <div className="flex gap-2 mr-4 border-r border-slate-200 pr-4">
+                <button 
+                  onClick={handleDownloadCSV}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                  title="Download telemetry as CSV"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  Export CSV
+                </button>
+                <button 
+                  onClick={handleDownloadImage}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded text-xs font-bold text-[#1E3A8A] hover:bg-slate-50 transition-colors shadow-sm"
+                  title="Save chart as PNG"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                  Save Image
+                </button>
+              </div>
+            )}
+            <div className="flex flex-wrap gap-4 text-[11px] md:text-xs text-slate-600 font-bold uppercase tracking-tight">
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#10B981]"></span> Observed</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#D97706]"></span> Predicted</span>
+              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#3B82F6]"></span> Confidence</span>
+            </div>
           </div>
         </div>
         
-        <div className="h-[300px] md:h-[400px] w-full bg-slate-50 rounded-lg p-2 md:p-4 border border-slate-200">
+        <div ref={chartRef} className="h-[300px] md:h-[400px] w-full bg-slate-50 rounded-lg p-2 md:p-4 border border-slate-200">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 16, right: 18, bottom: 6, left: 0 }}>
               <defs>
